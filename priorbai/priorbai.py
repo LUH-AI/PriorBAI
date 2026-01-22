@@ -324,10 +324,10 @@ def run_experiment(config, result_processor, custom_config):
     arms = list(true_final_means.keys())
 
     prior_means = {}
-    max_true_mean = .np.array(true_final_means.values()).max()
+    max_true_mean = np.array(list(true_final_means.values())).max()
     if prior == "uniform":
         for arm in arms:
-            prior_means[arm] = np.array(true_final_means.values()).mean()
+            prior_means[arm] = np.array(list(true_final_means.values())).mean()
     elif prior == "rank":
         for arm in arms:
             # prior is the inverse of the true mean's rank
@@ -391,9 +391,9 @@ def run_experiment(config, result_processor, custom_config):
 if __name__ == "__main__":
     pyexp = PyExperimenter(
         experiment_configuration_file_path="conf/experiment_config.yml",
-        database_credential_file_path="conf/database_credentials.yml",
+        # database_credential_file_path="conf/database_credentials.yml",
         use_codecarbon=False
     )
 
-    pyexp.fill_table_from_config()
-
+    # pyexp.fill_table_from_config()
+    pyexp.execute(run_experiment, max_experiments=100)
