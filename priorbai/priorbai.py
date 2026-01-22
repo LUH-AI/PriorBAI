@@ -427,20 +427,20 @@ if __name__ == "__main__":
         use_codecarbon=False
     )
 
-    # pyexp.fill_table_from_config()
-    # pyexp.execute(run_experiment, max_experiments=100)
+    pyexp.fill_table_from_config()
+    pyexp.execute(run_experiment, max_experiments=1)
 
-    class MockupProcesor:
-        def process_results(self, data):
-            print(data)
-
-    run_experiment({
-        "seed": 0,
-        "benchmark": "lcbench",
-        "prior": "uniform",
-        "sigma0": 0.1,
-        "epsilon": 0.01,
-        "delta": 0.05,
-        "num_arms": 32,
-    }, MockupProcesor(), {})
+    # class MockupProcesor:
+    #     def process_results(self, data):
+    #         print(data)
+    #
+    # run_experiment({
+    #     "seed": 0,
+    #     "benchmark": "lcbench",
+    #     "prior": "uniform",
+    #     "sigma0": 0.1,
+    #     "epsilon": 0.01,
+    #     "delta": 0.05,
+    #     "num_arms": 32,
+    # }, MockupProcesor(), {})
 
