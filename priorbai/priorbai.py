@@ -100,6 +100,7 @@ def mf_prior_guided_successive_halving(
         sigma0_sq: float = 1.0,
         random_state: int | None = None,
         verbose: bool = False,
+        result_processor: Any | None = None
 ) -> tuple[Any, int, int]:
 
     arms = list(arms)
@@ -261,6 +262,17 @@ def mf_prior_guided_successive_halving(
             if verbose:
                 print("N_used", N_used, "but N_stop requires", N_stop)
 
+            if result_processor is not None:
+                result_processor.process_logs({
+                    "sh_iterations": {
+                        "iteration": r,
+                        "num_arms": len(S_r),
+                        "best_arm_included": 1 if 0 in S_r else 0,
+                        "budget_spent_so_far": N_used,
+                        "N_stop": N_stop
+                    }
+                })
+
             if N_used >= N_stop:
                 if verbose:
                     print("Stopping condition reached; return i_hat; current round was ", r, " out of ", R)
@@ -395,6 +407,7 @@ def run_experiment(config, result_processor, custom_config):
         epsilon=epsilon,
         sigma0_sq=sigma0_sq,
         verbose=False,
+        result_processor=result_processor
     )
     actual_best = max(true_final_means, key=true_final_means.get)
 
