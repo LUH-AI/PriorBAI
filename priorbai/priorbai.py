@@ -101,6 +101,7 @@ def mf_prior_guided_successive_halving(
         observe_fn: Callable[[Any, np.ndarray], np.ndarray],
         kernel: Kernel | None,
         use_predicted_y: bool,
+        use_early_stopping: bool,
         delta: float,
         epsilon: float,
         sigma0_sq: float,
@@ -279,11 +280,11 @@ def mf_prior_guided_successive_halving(
                         "N_stop": N_stop
                     }
                 })
-
-            if N_used >= N_stop:
-                if verbose:
-                    print("Stopping condition reached; return i_hat; current round was ", r, " out of ", R)
-                return i_hat, N_used, len(S_r)
+            if use_early_stopping:
+                if N_used >= N_stop: #TODO if we want to do plain sf deactivate this
+                    if verbose:
+                        print("Stopping condition reached; return i_hat; current round was ", r, " out of ", R)
+                    return i_hat, N_used, len(S_r)
 
         # 4. Pruning
         if use_predicted_y:
@@ -329,6 +330,7 @@ def run_experiment(config, result_processor, custom_config):
     else:
         kernel_name = "satexp_rbf"
     use_predicted_y = bool(config["use_predicted_y"])
+    use_early_stopping = bool(config.get("use_early_stopping", False))
 
     ### TODO: Does this need to be configurable?
     prior_std = 0.01
@@ -411,6 +413,10 @@ def run_experiment(config, result_processor, custom_config):
         # prior is the inverse of the true mean's rank
         for arm in arms:
             prior_means[arm] = 1 if (max_true_mean - true_final_means[arm]) <= epsilon else 0
+    elif prior is None:
+        # This is vanilla SH
+        for arm in arms:
+            prior_means[arm] = 0.0
     else:
         raise ValueError("Unknown prior type")
 
@@ -429,6 +435,9 @@ def run_experiment(config, result_processor, custom_config):
         sat_kernel = SaturatingExpKernel(tau=0.3, sigma_sq=1.0)
         smooth_kernel = RBF(length_scale=0.2)
         lc_kernel = sat_kernel + smooth_kernel
+    elif kernel_name is None:
+        lc_kernel = None
+
     else:
         raise ValueError("Unknown kernel type")
 
@@ -440,6 +449,7 @@ def run_experiment(config, result_processor, custom_config):
         observe_fn=eval_fun,
         kernel=lc_kernel,
         use_predicted_y=use_predicted_y,
+        use_early_stopping=use_early_stopping,
         delta=delta,
         epsilon=epsilon,
         sigma0_sq=sigma0_sq,
@@ -480,4 +490,4 @@ if __name__ == "__main__":
     )
     #pyexp.reset_experiments("running", "error")
     #pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=160, random_order=True)
+    pyexp.execute(run_experiment, max_experiments=1, random_order=True)
