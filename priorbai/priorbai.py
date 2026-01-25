@@ -1,8 +1,13 @@
-import math
-import tqdm
-from typing import Callable, List, Dict, Any, Sequence
+from __future__ import annotations
 
+import math
+import warnings
+from typing import Any, Callable, Dict, List, Sequence
+
+import numpy as np
+import tqdm
 from py_experimenter.experimenter import PyExperimenter
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Kernel, Hyperparameter, RBF, Matern
 import numpy as np
