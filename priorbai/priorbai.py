@@ -400,8 +400,8 @@ def run_experiment(config, result_processor, custom_config):
         for arm in arms:
             prior_means[arm] = np.array(list(true_final_means.values())).mean()
     elif prior == "rank":
+        # prior is the rank of the arm
         for arm in arms:
-            # prior is the inverse of the true mean's rank
             prior_means[arm] = 1 / (arm+1)
     elif prior == "performance":
         # prior mean sampled from a normal distribution around the actual mean
@@ -412,7 +412,7 @@ def run_experiment(config, result_processor, custom_config):
         for arm in arms:
             prior_means[arm] = (arm+1) / num_arms
     elif prior == "indicator":
-        # prior is the inverse of the true mean's rank
+        # 1 if epsilon-optimal, 0 else
         for arm in arms:
             prior_means[arm] = 1 if (max_true_mean - true_final_means[arm]) <= epsilon else 0
     elif prior is None:
@@ -486,10 +486,10 @@ def run_experiment(config, result_processor, custom_config):
 
 if __name__ == "__main__":
     pyexp = PyExperimenter(
-        experiment_configuration_file_path="conf/successive_halving.yml",
+        experiment_configuration_file_path="conf/experiment_config.yml",
         database_credential_file_path="conf/database_credentials.yml",
         use_codecarbon=False
     )
-    #pyexp.fill_table_from_config()
+    pyexp.fill_table_from_config()
     #pyexp.reset_experiments("running", "error")
-    pyexp.execute(run_experiment, max_experiments=1, random_order=True)
+    pyexp.execute(run_experiment, max_experiments=30, random_order=True)
