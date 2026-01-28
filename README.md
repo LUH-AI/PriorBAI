@@ -1,5 +1,5 @@
 # PriorBAI
-This repsository contains the code for the ICML 2026 submisison titled: "Provable Sample Cost Reduction in Prior-Guided Hyperparameter Optimization". The paper introduces PriorBAI, a novel multi-fidelity Bayesian optimization algorithm that leverages prior knowledge to enhance hyperparameter optimization efficiency studies the effects of priors from a theoretical perspective, and conducts empirical evaluations.
+This repsository contains the code for the submisison titled: "Provable Sample Cost Reduction in Prior-Guided Hyperparameter Optimization". The paper introduces PriorBAI, a novel multi-fidelity Bayesian optimization algorithm that leverages prior knowledge to enhance hyperparameter optimization efficiency studies the effects of priors from a theoretical perspective, and conducts empirical evaluations.
 
 ![Pareto front (synthetic)](plots/pareto_front_idea_synthetic.png)
 
