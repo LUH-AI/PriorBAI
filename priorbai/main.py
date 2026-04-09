@@ -36,31 +36,31 @@ def mf_prior_guided_successive_halving(
 ) -> tuple[Any, int, int]:
 
     arms = list(arms)
-    K = len(arms)
-    if K < 1:
+    number_of_arms = len(arms)
+    if number_of_arms < 1:
         raise ValueError("At least one arm is required.")
 
-    S_r = arms.copy()
-    R = math.ceil(math.log2(K))
+    active_arms = arms.copy()
+    number_of_rounds= math.ceil(math.log2(number_of_arms))
     mu_hat: Dict[Any, float] = {arm: prior_means[arm] for arm in arms}
-    N_used = 0
-    n_prev = 0
+    budget_consumed = 0
+    previous_round_budget = 0
     arm_ts: Dict[Any, List[int]] = {arm: [] for arm in arms}
     arm_ys: Dict[Any, List[float]] = {arm: [] for arm in arms}
-    C_log = math.log(2.0 * math.log2(K) * (K / 2 - 1) / delta)
+    C_log = math.log(2.0 * math.log2(number_of_arms) * (number_of_arms / 2 - 1) / delta)
     logger.debug("C_log=%s", C_log)
 
-    for r in range(R):
-        if len(S_r) == 0:
-            logger.warning("S_r is empty at round %d — this should not happen.", r)
+    for round_index in range(number_of_rounds):
+        if len(active_arms) == 0:
+            logger.warning("S_r is empty at round %d — this should not happen.", round_index)
             break
 
-        n_r = math.floor(budget_N / (R * len(S_r)))
-        if n_r <= n_prev:
-            logger.debug("No additional budget to allocate at round %d; stopping.", r)
+        round_budget = math.floor(budget_N / (number_of_rounds * len(active_arms)))
+        if round_budget <= previous_round_budget:
+            logger.debug("No additional budget to allocate at round %d; stopping.", round_index)
             break
 
-        N_used += len(S_r) * (n_r - n_prev)
+        budget_consumed += len(active_arms) * (round_budget - previous_round_budget)
 
         # 1. Observation & Extrapolation
         round_y: Dict[Any, float] = {}
@@ -68,8 +68,8 @@ def mf_prior_guided_successive_halving(
         round_sigma_sq: Dict[Any, float] = {}
         Sigma = 0.0
 
-        for arm in S_r:
-            new_ts = np.arange(n_prev + 1, n_r + 1, dtype=int)
+        for arm in active_arms:
+            new_ts = np.arange(previous_round_budget + 1, round_budget + 1, dtype=int)
             if len(new_ts) > 0:
                 new_ys = observe_fn(arm, new_ts)
                 if len(new_ys) != len(new_ts):
@@ -102,7 +102,7 @@ def mf_prior_guided_successive_halving(
 
                 logger.debug(
                     "arm=%s  n_r=%d  mu_j_r=%.4f  sigma_j_r_sq=%.4f  actual=%.4f",
-                    arm, n_r, mu_j_r, sigma_j_r_sq, arm_ys[arm][-1],
+                    arm, round_budget, mu_j_r, sigma_j_r_sq, arm_ys[arm][-1],
                 )
 
             round_y[arm] = arm_ys[arm][-1]
@@ -111,19 +111,19 @@ def mf_prior_guided_successive_halving(
 
         logger.debug("round_sigma_sq=%s  Sigma=%.6f", round_sigma_sq, Sigma)
 
-        n_prev = n_r
+        previous_round_budget = round_budget
         mu_hat.update(round_mu_hat)
 
         # 2. Candidate Selection
-        i_hat = max(S_r, key=lambda a: round_mu_hat[a])
+        i_hat = max(active_arms, key=lambda a: round_mu_hat[a])
 
         # 3. Stopping Condition
         Deltas: Dict[Any, float] = {}
-        for arm in S_r:
+        for arm in active_arms:
             if arm == i_hat:
                 continue
-            gap = round_mu_hat[i_hat] - round_mu_hat[arm]
-            Deltas[arm] = max(epsilon, gap)
+            performance_gap = round_mu_hat[i_hat] - round_mu_hat[arm]
+            Deltas[arm] = max(epsilon, performance_gap)
 
         logger.debug("round_mu_hat=%s", round_mu_hat)
 
@@ -141,13 +141,13 @@ def mf_prior_guided_successive_halving(
                 if Delta_j_r <= 0:
                     continue
 
-                N_stop_j = (4.0 * R * Sigma / (Delta_j_r ** 2)) * bracket
-                base_budget = (4.0 * R * Sigma / (Delta_j_r ** 2)) * C_log
-                budget_reduction = (4.0 * R * Sigma / (Delta_j_r ** 2)) * ((nu_i - nu_j) * Delta_j_r) / (2.0 * sigma0_sq)
+                N_stop_j = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * bracket
+                base_budget = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * C_log
+                budget_reduction = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * ((nu_i - nu_j) * Delta_j_r) / (2.0 * sigma0_sq)
                 logger.debug(
-                    "arm=%s  r=%d  R=%d  Sigma=%.6f  Delta=%.6f  bracket=%.6f  N_stop=%.4f  "
+                    "arm=%s  r=%d  number_of_rounds=%d  Sigma=%.6f  Delta=%.6f  bracket=%.6f  N_stop=%.4f  "
                     "base_budget=%.4f  budget_reduction=%.4f",
-                    arm, r, R, Sigma, Delta_j_r, bracket, N_stop_j, base_budget, budget_reduction,
+                    arm, round_index, number_of_rounds, Sigma, Delta_j_r, bracket, N_stop_j, base_budget, budget_reduction,
                 )
                 N_stop_candidates.append(N_stop_j)
 
@@ -159,41 +159,41 @@ def mf_prior_guided_successive_halving(
                 )
 
             N_stop = max(N_stop_candidates) if N_stop_candidates else 0.0
-            logger.debug("N_used=%d  N_stop=%.4f", N_used, N_stop)
+            logger.debug("N_used=%d  N_stop=%.4f", budget_consumed, N_stop)
 
             if result_processor is not None:
                 result_processor.process_logs({
                     "sh_iterations": {
-                        "iteration": r,
-                        "num_arms": len(S_r),
-                        "best_arm_included": 1 if 0 in S_r else 0,
-                        "budget_spent_so_far": N_used,
+                        "iteration": round_index,
+                        "num_arms": len(active_arms),
+                        "best_arm_included": 1 if 0 in active_arms else 0,
+                        "budget_spent_so_far": budget_consumed,
                         "N_stop": N_stop,
                     }
                 })
 
-            if use_early_stopping and N_used >= N_stop:
+            if use_early_stopping and budget_consumed >= N_stop:
                 logger.debug(
                     "Stopping condition reached at round %d/%d with %d arms remaining.",
-                    r, R, len(S_r),
+                    round_index, number_of_rounds, len(active_arms),
                 )
-                return i_hat, N_used, len(S_r)
+                return i_hat, budget_consumed, len(active_arms)
 
         # 4. Pruning
         if use_predicted_y:
-            S_r_sorted = sorted(S_r, key=lambda a: round_mu_hat[a], reverse=True)
+            S_r_sorted = sorted(active_arms, key=lambda a: round_mu_hat[a], reverse=True)
         else:
-            S_r_sorted = sorted(S_r, key=lambda a: round_y[a], reverse=True)
+            S_r_sorted = sorted(active_arms, key=lambda a: round_y[a], reverse=True)
 
-        keep = math.ceil(len(S_r_sorted) / 2.0)
-        S_r = S_r_sorted[:keep]
+        number_of_arms_to_keep = math.ceil(len(S_r_sorted) / 2.0)
+        active_arms = S_r_sorted[:number_of_arms_to_keep]
 
-        if 0 not in S_r:
-            logger.warning("The best arm (arm 0) was eliminated at round %d.", r)
+        if 0 not in active_arms:
+            logger.warning("The best arm (arm 0) was eliminated at round %d.", round_index)
 
-    if len(S_r) == 0:
-        return max(arms, key=lambda a: mu_hat[a]), N_used, len(S_r)
-    return max(S_r, key=lambda a: mu_hat[a]), N_used, len(S_r)
+    if len(active_arms) == 0:
+        return max(arms, key=lambda a: mu_hat[a]), budget_consumed, len(active_arms)
+    return max(active_arms, key=lambda a: mu_hat[a]), budget_consumed, len(active_arms)
 
 
 def run_experiment(config, result_processor, custom_config):
@@ -221,7 +221,7 @@ def run_experiment(config, result_processor, custom_config):
 
     arms = list(true_final_means.keys())
     prior_means = get_prior_means(arms, prior, true_final_means, epsilon, rng)
-    lc_kernel = get_kernel(kernel_name)
+    learning_curve_kernel = get_kernel(kernel_name)
 
     selected_best, budget_used, num_arms_left = mf_prior_guided_successive_halving(
         arms=arms,
@@ -229,7 +229,7 @@ def run_experiment(config, result_processor, custom_config):
         prior_means=prior_means,
         T_max=T_max,
         observe_fn=benchmark.evaluate,
-        kernel=lc_kernel,
+        kernel=learning_curve_kernel,
         use_predicted_y=use_predicted_y,
         use_early_stopping=use_early_stopping,
         delta=delta,
