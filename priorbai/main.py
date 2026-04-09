@@ -196,26 +196,15 @@ def mf_prior_guided_successive_halving(
     return max(active_arms, key=lambda a: mu_hat[a]), budget_consumed, len(active_arms)
 
 
-def run_experiment(config, result_processor, custom_config):
-    logger.debug("config: %s", config)
-
-    seed = int(config["seed"])
-    rng = np.random.default_rng(seed)
-    np.random.seed(seed)
-
+def setup_run(config, rng):
     benchmark_name = config["benchmark"]
     num_arms = int(config["num_arms"])
+    seed = int(config["seed"])
     prior = config["prior"]
-    sigma0 = float(config["sigma0"])
-    sigma0_sq = sigma0 ** 2
     epsilon = float(config["epsilon"])
-    delta = float(config["delta"])
     kernel_name = config.get("kernel", "satexp_rbf")
-    use_predicted_y = bool(config["use_predicted_y"])
-    use_early_stopping = bool(config.get("use_early_stopping", False))
 
     benchmark = get_benchmark(benchmark_name, num_arms, seed, rng)
-    T_max = benchmark.get_t_max()
     true_final_means = benchmark.get_true_final_means()
     logger.info("True final means: %s", list(true_final_means.values()))
 
@@ -223,9 +212,30 @@ def run_experiment(config, result_processor, custom_config):
     prior_means = get_prior_means(arms, prior, true_final_means, epsilon, rng)
     learning_curve_kernel = get_kernel(kernel_name)
 
+    return benchmark, arms, prior_means, learning_curve_kernel
+
+
+def run_experiment(config, result_processor, custom_config):
+    logger.debug("config: %s", config)
+
+    seed = int(config["seed"])
+    rng = np.random.default_rng(seed)
+    np.random.seed(seed)
+
+    sigma0 = float(config["sigma0"])
+    sigma0_sq = sigma0 ** 2
+    epsilon = float(config["epsilon"])
+    delta = float(config["delta"])
+    use_predicted_y = bool(config["use_predicted_y"])
+    use_early_stopping = bool(config.get("use_early_stopping", False))
+
+    benchmark, arms, prior_means, learning_curve_kernel = setup_run(config, rng)
+    T_max = benchmark.get_t_max()
+    true_final_means = benchmark.get_true_final_means()
+
     selected_best, budget_used, num_arms_left = mf_prior_guided_successive_halving(
         arms=arms,
-        budget_N=num_arms * np.log2(num_arms),
+        budget_N=len(arms) * np.log2(len(arms)),
         prior_means=prior_means,
         T_max=T_max,
         observe_fn=benchmark.evaluate,
