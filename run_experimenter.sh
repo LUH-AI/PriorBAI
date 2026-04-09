@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -t 1:00:00
-#SBATCH --array=1-12000%300
+#SBATCH --array=1-300
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu 4G
 #SBATCH -J priorbai
@@ -14,4 +14,4 @@ cd /scratch/hpc-prf-intexml/fehring/PriorBAI/
 
 source .venv/bin/activate
 
-python priorbai/priorbai.py
+python priorbai/main.py

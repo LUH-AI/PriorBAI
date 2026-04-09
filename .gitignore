@@ -6,3 +6,6 @@ conf/certificates
 priorbai/.DS_Store
 */__pycache__/*
 plots/*.pdf
+PriorBAI.egg-info/
+priorbai.db
+
