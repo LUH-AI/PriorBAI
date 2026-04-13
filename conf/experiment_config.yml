@@ -2,7 +2,7 @@ PY_EXPERIMENTER:
   n_jobs: 1
 
   Database:
-    provider: mysql
+    provider: sqlite
     database: priorbai
 
     table:
@@ -11,15 +11,15 @@ PY_EXPERIMENTER:
       keyfields:
         run_id: { type: VARCHAR(64), values: ["__AUTO__"] }
         optimizer: { type: VARCHAR(64), values: ["successive_halving", "hyperband"] }
-        num_arms: {type: INT, values: [32, 64, 128, 256]}
+        num_arms: {type: INT, values: [256]}
         benchmark: { type: VARCHAR(255), values: ["lcbench"] }
         kernel: { type: VARCHAR(255), values: ["linear"]}
         use_predicted_y: { type: INT, values: [0,1]}
         use_early_stopping: { type: INT, values: [1]}
         seed: {type: INT, values: [0]}
-        prior: { type: VARCHAR(255), values: ["uniform", "rank", "performance", "inverse_rank", "indicator"]}
+        prior: { type: VARCHAR(255), values: [ "rank", ]}
         performance_prior_std: { type: DOUBLE, values: [0.01] }
-        sigma0: { type: DOUBLE, values: [0.01, 0.001, 0.0001]}
+        sigma0: { type: DOUBLE, values: [0.01]}
         epsilon: {type: DOUBLE, values: [0.01]}
         delta: {type: DOUBLE, values: [0.01,]}
 
@@ -35,6 +35,7 @@ PY_EXPERIMENTER:
 
     logtables:
       sh_iterations:
+          bracket: INT
           iteration: INT
           num_arms: VARCHAR(20)
           best_arm_included: INT

@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from typing import Any, Callable, Dict, List, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 from py_experimenter.experimenter import PyExperimenter
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 def prior_guided_successive_halving(
         arms: Sequence[Any],
         budget_N: int,
-        prior_means: Dict[Any, float],
+        prior_means: dict[Any, float],
         T_max: int,
         observe_fn: Callable[[Any, np.ndarray], np.ndarray],
         kernel: Kernel | None,
@@ -33,6 +34,7 @@ def prior_guided_successive_halving(
         rng: np.random.Generator,
         seed: int,
         result_processor: Any | None,
+        hb_bracket: int | None,
 ) -> tuple[Any, int, int]:
 
     arms = list(arms)
@@ -42,12 +44,12 @@ def prior_guided_successive_halving(
 
     active_arms = arms.copy()
     number_of_rounds= math.ceil(math.log2(number_of_arms))
-    mu_hat: Dict[Any, float] = {arm: prior_means[arm] for arm in arms}
+    mu_hat: dict[Any, float] = {arm: prior_means[arm] for arm in arms}
     budget_consumed = 0
     previous_round_budget = 0
-    arm_ts: Dict[Any, List[int]] = {arm: [] for arm in arms}
-    arm_ys: Dict[Any, List[float]] = {arm: [] for arm in arms}
-    C_log = math.log(2.0 * math.log2(number_of_arms) * (number_of_arms / 2 - 1) / delta)
+    arm_ts: dict[Any, list[int]] = {arm: [] for arm in arms}
+    arm_ys: dict[Any, list[float]] = {arm: [] for arm in arms}
+    C_log = math.log(2.0 * math.log2(number_of_arms) * ((number_of_arms / 2) - 1) / delta)
     logger.debug("C_log=%s", C_log)
 
     for round_index in range(number_of_rounds):
@@ -63,9 +65,9 @@ def prior_guided_successive_halving(
         budget_consumed += len(active_arms) * (round_budget - previous_round_budget)
 
         # 1. Observation & Extrapolation
-        round_y: Dict[Any, float] = {}
-        round_mu_hat: Dict[Any, float] = {}
-        round_sigma_sq: Dict[Any, float] = {}
+        round_y: dict[Any, float] = {}
+        round_mu_hat: dict[Any, float] = {}
+        round_sigma_sq: dict[Any, float] = {}
         Sigma = 0.0
 
         for arm in active_arms:
@@ -118,7 +120,7 @@ def prior_guided_successive_halving(
         i_hat = max(active_arms, key=lambda a: round_mu_hat[a])
 
         # 3. Stopping Condition
-        Deltas: Dict[Any, float] = {}
+        Deltas: dict[Any, float] = {}
         for arm in active_arms:
             if arm == i_hat:
                 continue
@@ -136,18 +138,18 @@ def prior_guided_successive_halving(
                     "arm=%s  nu_i=%.4f  nu_j=%.4f  nu_diff=%.4f",
                     arm, nu_i, nu_j, nu_i - nu_j,
                 )
-                bracket = C_log - ((nu_i - nu_j) * Delta_j_r) / (2.0 * sigma0_sq)
-                bracket = max(bracket, 0.0)
+                formula_bracket = C_log - ((nu_i - nu_j) * Delta_j_r) / (2.0 * sigma0_sq)
+                formula_bracket = max(formula_bracket, 0.0)
                 if Delta_j_r <= 0:
                     continue
 
-                N_stop_j = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * bracket
+                N_stop_j = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * formula_bracket
                 base_budget = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * C_log
                 budget_reduction = (4.0 * number_of_rounds * Sigma / (Delta_j_r ** 2)) * ((nu_i - nu_j) * Delta_j_r) / (2.0 * sigma0_sq)
                 logger.debug(
                     "arm=%s  r=%d  number_of_rounds=%d  Sigma=%.6f  Delta=%.6f  bracket=%.6f  N_stop=%.4f  "
                     "base_budget=%.4f  budget_reduction=%.4f",
-                    arm, round_index, number_of_rounds, Sigma, Delta_j_r, bracket, N_stop_j, base_budget, budget_reduction,
+                    arm, round_index, number_of_rounds, Sigma, Delta_j_r, hb_bracket, N_stop_j, base_budget, budget_reduction,
                 )
                 N_stop_candidates.append(N_stop_j)
 
@@ -164,6 +166,7 @@ def prior_guided_successive_halving(
             if result_processor is not None:
                 result_processor.process_logs({
                     "sh_iterations": {
+                        "bracket": hb_bracket,
                         "iteration": round_index,
                         "num_arms": len(active_arms),
                         "best_arm_included": 1 if 0 in active_arms else 0,
@@ -199,7 +202,7 @@ def prior_guided_successive_halving(
 def prior_guided_hyperband(
         arms: Sequence[Any],
         eta: int,
-        prior_means: Dict[Any, float],
+        prior_means: dict[Any, float],
         T_max: int,
         observe_fn: Callable[[Any, np.ndarray], np.ndarray],
         kernel: Kernel | None,
@@ -232,13 +235,13 @@ def prior_guided_hyperband(
     B = (s_max + 1) * T_max  # equal budget envelope for every bracket
 
     total_budget = 0
-    bracket_results: List[tuple[Any, float]] = []
+    bracket_results: list[tuple[Any, float]] = []
 
-    for s in range(s_max, -1, -1):
+    for hb_bracket in range(s_max, -1, -1):
         # Paper: n_s = ceil(B/R * eta^s / (s+1)) = ceil((s_max+1) * eta^s / (s+1))
         # s = s_max → most arms (broadest exploration)
         # s = 0     → fewest arms (deepest exploitation, ~s_max+1 arms at full budget)
-        n_s = min(n, max(1, math.ceil((s_max + 1) * eta ** s / (s + 1))))
+        n_s = min(n, max(1, math.ceil((s_max + 1) * eta ** hb_bracket / (hb_bracket + 1))))
 
         if n_s >= n:
             bracket_arms = arms.copy()
@@ -248,12 +251,13 @@ def prior_guided_hyperband(
 
         logger.debug(
             "Hyperband bracket s=%d/%d: n_s=%d arms, r_s=%.1f, B=%d",
-            s, s_max, n_s, T_max / eta ** s, B,
+            hb_bracket, s_max, n_s, T_max / eta ** hb_bracket, B,
         )
 
         winner, budget_used, _ = prior_guided_successive_halving(
             arms=bracket_arms,
             budget_N=B,
+            hb_bracket=hb_bracket,
             prior_means=prior_means,
             T_max=T_max,
             observe_fn=observe_fn,
@@ -273,7 +277,7 @@ def prior_guided_hyperband(
         final_y = float(observe_fn(winner, np.array([T_max], dtype=int))[-1])
         total_budget += 1
         bracket_results.append((winner, final_y))
-        logger.debug("Bracket s=%d winner=%s  final_y=%.4f", s, winner, final_y)
+        logger.debug("Bracket s=%d winner=%s  final_y=%.4f", hb_bracket, winner, final_y)
 
     best_arm, _ = max(bracket_results, key=lambda x: x[1])
     return best_arm, total_budget, 1
@@ -343,6 +347,7 @@ def run_experiment(config, result_processor, custom_config):
         selected_best, budget_used, num_arms_left = prior_guided_successive_halving(
             arms=arms,
             budget_N=len(arms) * np.log2(len(arms)),
+            formula_bracket=None,
             **shared_kwargs,
         )
     else:
@@ -375,4 +380,4 @@ if __name__ == "__main__":
         use_codecarbon=False,
     )
     pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=1, random_order=True)
+    pyexp.execute(run_experiment, max_experiments=10, random_order=True)
