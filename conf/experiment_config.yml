@@ -29,10 +29,8 @@ PY_EXPERIMENTER:
         consumed_budget: DOUBLE
         remaining_arms: INT
         num_epsilon_optimal_arms: INT
-        arm_id_selected: INT
         regret: DOUBLE
         epsilon_optimal: INT
-        best_arm: INT
 
     logtables:
       sh_iterations:
@@ -48,4 +46,3 @@ PY_EXPERIMENTER:
           budget_used: DOUBLE
           stopped_early: INT
           stopped_after_round: INT
-          winner: INT
