@@ -43,12 +43,15 @@ def prior_guided_successive_halving(
         raise ValueError("At least one arm is required.")
 
     active_arms = arms.copy()
-    number_of_rounds= math.ceil(math.log2(number_of_arms))
+    number_of_rounds = math.ceil(math.log2(number_of_arms))
     mu_hat: dict[Any, float] = {arm: prior_means[arm] for arm in arms}
     budget_consumed = 0
     previous_round_budget = 0
     arm_ts: dict[Any, list[int]] = {arm: [] for arm in arms}
     arm_ys: dict[Any, list[float]] = {arm: [] for arm in arms}
+    N_stop = 0.0
+    round_index = -1
+    stopped_early = False
     C_log = math.log(2.0 * math.log2(number_of_arms) * ((number_of_arms / 2) - 1) / delta)
     logger.debug("C_log=%s", C_log)
 
@@ -180,7 +183,8 @@ def prior_guided_successive_halving(
                     "Stopping condition reached at round %d/%d with %d arms remaining.",
                     round_index, number_of_rounds, len(active_arms),
                 )
-                return i_hat, budget_consumed, len(active_arms)
+                best = i_hat
+                break
 
         # 4. Pruning
         if use_predicted_y:
@@ -193,17 +197,28 @@ def prior_guided_successive_halving(
 
         if 0 not in active_arms:
             logger.warning("The best arm (arm 0) was eliminated at round %d.", round_index)
+    else:
+        best = max(arms if len(active_arms) == 0 else active_arms, key=lambda a: mu_hat[a])
 
-    if len(active_arms) == 0:
-        return max(arms, key=lambda a: mu_hat[a]), budget_consumed, len(active_arms)
-    return max(active_arms, key=lambda a: mu_hat[a]), budget_consumed, len(active_arms)
+    if result_processor is not None:
+        result_processor.process_logs({
+            "brackets": {
+                "bracket": hb_bracket if hb_bracket is not None else 0,
+                "n_arms": number_of_arms,
+                "budget_used": budget_consumed,
+                "stopped_early": 1 if stopped_early else 0,
+                "stopped_after_round": round_index,
+                "winner": best,
+            }
+        })
+    return best, budget_consumed, len(active_arms)
 
 
 def prior_guided_hyperband(
         arms: Sequence[Any],
         eta: int,
         prior_means: dict[Any, float],
-        T_max: int,
+        max_fidelity: int,
         observe_fn: Callable[[Any, np.ndarray], np.ndarray],
         kernel: Kernel | None,
         use_predicted_y: bool,
@@ -231,35 +246,44 @@ def prior_guided_hyperband(
 
     # Paper formula: s_max = floor(log_eta(R)) where R = T_max (max budget per arm).
     # Each bracket gets budget B = (s_max + 1) * T_max.
-    s_max = math.floor(math.log(T_max, eta)) if T_max > 1 else 0
-    B = (s_max + 1) * T_max  # equal budget envelope for every bracket
+    number_of_halving_rounds = math.floor(math.log(max_fidelity, eta)) if max_fidelity > 1 else 0
+    bracketwise_budget = (number_of_halving_rounds + 1) * max_fidelity  # equal budget envelope for every bracket
+
+    # Pre-compute bracket sizes and assign non-overlapping arm slices.
+    bracket_sizes = [
+        min(n, max(1, math.ceil((number_of_halving_rounds + 1) * eta ** s / (s + 1))))
+        for s in range(number_of_halving_rounds, -1, -1)
+    ]
+    total_arms_needed = sum(bracket_sizes)
+    if total_arms_needed > n:
+        raise ValueError(
+            f"Hyperband needs {total_arms_needed} arms across brackets but only {n} are available."
+        )
+    shuffled_arms = list(arms)
+    rng.shuffle(shuffled_arms)
+    bracket_arm_assignments = []
+    offset = 0
+    for size in bracket_sizes:
+        bracket_arm_assignments.append(shuffled_arms[offset:offset + size])
+        offset += size
 
     total_budget = 0
     bracket_results: list[tuple[Any, float]] = []
 
-    for hb_bracket in range(s_max, -1, -1):
-        # Paper: n_s = ceil(B/R * eta^s / (s+1)) = ceil((s_max+1) * eta^s / (s+1))
-        # s = s_max → most arms (broadest exploration)
-        # s = 0     → fewest arms (deepest exploitation, ~s_max+1 arms at full budget)
-        n_s = min(n, max(1, math.ceil((s_max + 1) * eta ** hb_bracket / (hb_bracket + 1))))
-
-        if n_s >= n:
-            bracket_arms = arms.copy()
-        else:
-            indices = rng.choice(n, size=n_s, replace=False)
-            bracket_arms = [arms[int(i)] for i in sorted(indices)]
+    for hb_bracket, bracket_arms in zip(range(number_of_halving_rounds, -1, -1), bracket_arm_assignments):
+        n_s = len(bracket_arms)
 
         logger.debug(
             "Hyperband bracket s=%d/%d: n_s=%d arms, r_s=%.1f, B=%d",
-            hb_bracket, s_max, n_s, T_max / eta ** hb_bracket, B,
+            hb_bracket, number_of_halving_rounds, n_s, max_fidelity / eta ** hb_bracket, bracketwise_budget,
         )
 
         winner, budget_used, _ = prior_guided_successive_halving(
             arms=bracket_arms,
-            budget_N=B,
+            budget_N=bracketwise_budget,
             hb_bracket=hb_bracket,
             prior_means=prior_means,
-            T_max=T_max,
+            T_max=max_fidelity,
             observe_fn=observe_fn,
             kernel=kernel,
             use_predicted_y=use_predicted_y,
@@ -274,7 +298,7 @@ def prior_guided_hyperband(
         total_budget += budget_used
 
         # Evaluate bracket winner at T_max for cross-bracket comparison.
-        final_y = float(observe_fn(winner, np.array([T_max], dtype=int))[-1])
+        final_y = float(observe_fn(winner, np.array([max_fidelity], dtype=int))[-1])
         total_budget += 1
         bracket_results.append((winner, final_y))
         logger.debug("Bracket s=%d winner=%s  final_y=%.4f", hb_bracket, winner, final_y)
@@ -287,11 +311,12 @@ def setup_run(config, rng):
     benchmark_name = config["benchmark"]
     num_arms = int(config["num_arms"])
     seed = int(config["seed"])
+    dataset_id = int(config["dataset_id"])
     prior = config["prior"]
     epsilon = float(config["epsilon"])
     kernel_name = config.get("kernel", "satexp_rbf")
 
-    benchmark = get_benchmark(benchmark_name, num_arms, seed, rng)
+    benchmark = get_benchmark(benchmark_name, num_arms, seed, rng, dataset_id)
     true_final_means = benchmark.get_true_final_means()
     logger.info("True final means: %s", list(true_final_means.values()))
 
@@ -347,7 +372,7 @@ def run_experiment(config, result_processor, custom_config):
         selected_best, budget_used, num_arms_left = prior_guided_successive_halving(
             arms=arms,
             budget_N=len(arms) * np.log2(len(arms)),
-            formula_bracket=None,
+            hb_bracket=None,
             **shared_kwargs,
         )
     else:
@@ -379,5 +404,5 @@ if __name__ == "__main__":
         database_credential_file_path="conf/database_credentials.yml",
         use_codecarbon=False,
     )
-    pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=10, random_order=True)
+    # pyexp.fill_table_from_config()
+    pyexp.execute(run_experiment, max_experiments=20, random_order=True)

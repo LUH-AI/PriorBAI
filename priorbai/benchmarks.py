@@ -43,14 +43,13 @@ class SyntheticBenchmark(Benchmark):
 class LCBenchBenchmark(Benchmark):
     _T_MAX = 52
 
-    def __init__(self, num_arms: int, seed: int):
+    def __init__(self, num_arms: int, seed: int, dataset_id: int):
         from yahpo_gym import benchmark_set, local_config
 
         local_config._config = {"data_path": "data/yahpogym/"}
         self._benchmark = benchmark_set.BenchmarkSet("lcbench")
 
-        instance_idx = seed % len(self._benchmark.instances)
-        self._benchmark.set_instance(self._benchmark.instances[instance_idx])
+        self._benchmark.set_instance(self._benchmark.instances[dataset_id])
 
         cfg_list = self._benchmark.get_opt_space(seed=seed).sample_configuration(size=num_arms)
         configs: List[Tuple[Dict, float]] = []
@@ -80,10 +79,10 @@ class LCBenchBenchmark(Benchmark):
         return np.array(res)
 
 
-def get_benchmark(benchmark_name: str, num_arms: int, seed: int, rng: np.random.Generator) -> Benchmark:
+def get_benchmark(benchmark_name: str, num_arms: int, seed: int, rng: np.random.Generator, dataset_id: int) -> Benchmark:
     if benchmark_name == "synthetic":
         return SyntheticBenchmark(num_arms, rng)
     elif benchmark_name == "lcbench":
-        return LCBenchBenchmark(num_arms, seed)
+        return LCBenchBenchmark(num_arms, seed, dataset_id)
     else:
         raise ValueError(f"Unknown benchmark: {benchmark_name!r}")

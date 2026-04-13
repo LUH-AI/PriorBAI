@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -t 1:00:00
-#SBATCH --array=1-300
+#SBATCH -t 0:05:00
+#SBATCH --array=1-6800%300
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu 4G
 #SBATCH -J priorbai
