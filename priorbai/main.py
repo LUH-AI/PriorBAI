@@ -37,8 +37,8 @@ def prior_guided_successive_halving(
         hb_bracket: int | None,
 ) -> tuple[float, int, int, dict[int, float]]:
 
-    arms, true_final_means, observe_fn = benchmark.sample(num_arms, sampling_seed)
-    T_max = benchmark.get_t_max()
+    arms, true_final_means = benchmark.sample(num_arms, sampling_seed)
+    T_max = benchmark.get_max_fidelity()
     prior_means = get_prior_means(arms, prior, true_final_means, epsilon, rng)
 
     number_of_arms = len(arms)
@@ -77,12 +77,12 @@ def prior_guided_successive_halving(
         Sigma = 0.0
 
         for arm in active_arms:
-            new_ts = np.arange(previous_round_budget + 1, round_budget + 1, dtype=int)
-            if len(new_ts) > 0:
-                new_ys = observe_fn(arm, new_ts)
-                if len(new_ys) != len(new_ts):
-                    raise ValueError("observe_fn must return one y per t.")
-                arm_ts[arm].extend(new_ts.tolist())
+            new_fidelity_levels = np.arange(previous_round_budget + 1, round_budget + 1, dtype=int)
+            if len(new_fidelity_levels) > 0:
+                new_ys = benchmark.evaluate(arm, new_fidelity_levels)
+                if len(new_ys) != len(new_fidelity_levels):
+                    raise ValueError("evaluate must return one y per t.")
+                arm_ts[arm].extend(new_fidelity_levels.tolist())
                 arm_ys[arm].extend(new_ys.tolist())
 
             X = np.asarray(arm_ts[arm], dtype=float).reshape(-1, 1) / T_max
@@ -228,7 +228,7 @@ def prior_guided_hyperband(
         seed: int,
         result_processor: Any | None,
 ) -> tuple[float, int, int, dict[int, dict[int, float]]]:
-    T_max = benchmark.get_t_max()
+    T_max = benchmark.get_max_fidelity()
     number_of_halving_rounds = math.floor(math.log(T_max, eta)) if T_max > 1 else 0
     bracketwise_budget = (number_of_halving_rounds + 1) * T_max
 
@@ -302,7 +302,7 @@ def run_experiment(config, result_processor, custom_config):
     optimizer = config["optimizer"]
 
     benchmark, learning_curve_kernel = setup_run(config)
-    T_max = benchmark.get_t_max()
+    T_max = benchmark.get_max_fidelity()
 
     shared_kwargs = dict(
         benchmark=benchmark,
@@ -359,4 +359,4 @@ if __name__ == "__main__":
     )
     # pyexp.reset_experiments("running", "error")
     # pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=23, random_order=True)
+    pyexp.execute(run_experiment, max_experiments=11, random_order=True)
