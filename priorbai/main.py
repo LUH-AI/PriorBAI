@@ -276,8 +276,9 @@ def setup_run(config):
     num_arms = int(config["num_arms"])
     dataset_id = int(config["dataset_id"])
     kernel_name = config.get("kernel", "satexp_rbf")
-
-    benchmark = get_benchmark(benchmark_name, num_arms, dataset_id)
+    seed = int(config["seed"])
+    
+    benchmark = get_benchmark(benchmark_name, num_arms, dataset_id, seed)
     learning_curve_kernel = get_kernel(kernel_name)
 
     return benchmark, learning_curve_kernel
@@ -358,5 +359,5 @@ if __name__ == "__main__":
         use_codecarbon=False,
     )
     # pyexp.reset_experiments("running", "error")
-    # pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=11, random_order=True)
+    pyexp.fill_table_from_config()
+    pyexp.execute(run_experiment, max_experiments=10, random_order=True)
