@@ -3,15 +3,16 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-
+from functools import partial
+from collections.abc import Callable
 from typing import Any
-
+from priorbai.utils import Runhistory
 import numpy as np
 from py_experimenter.experimenter import PyExperimenter
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Kernel
-
+from utils import Runhistory
 from priorbai.benchmarks import Benchmark, get_benchmark
 from priorbai.kernels import get_kernel
 from priorbai.priors import get_prior_means
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 def prior_guided_successive_halving(
         benchmark: Benchmark,
         num_arms: int,
-        prior: str,
+        prior_kind: str,
         sampling_seed: int,
         budget_N: int,
         kernel: Kernel | None,
@@ -35,11 +36,12 @@ def prior_guided_successive_halving(
         seed: int,
         result_processor: Any | None,
         hb_bracket: int | None,
+        sample_configurations: Callable[..., tuple[list[int], dict[int, float]]],
 ) -> tuple[float, int, int, dict[int, float]]:
 
-    arms, true_final_means = benchmark.sample(num_arms, sampling_seed)
+    arms, true_final_means = sample_configurations(num_arms, sampling_seed)
     T_max = benchmark.get_max_fidelity()
-    prior_means = get_prior_means(arms, prior, true_final_means, epsilon, rng)
+    prior_means = get_prior_means(arms, prior_kind, true_final_means, epsilon, rng)
 
     number_of_arms = len(arms)
     if number_of_arms < 1:
@@ -195,7 +197,7 @@ def prior_guided_successive_halving(
         else:
             S_r_sorted = sorted(active_arms, key=lambda a: round_y[a], reverse=True)
 
-        number_of_arms_to_keep = math.ceil(len(S_r_sorted) / 2.0)
+        number_of_arms_to_keep = math.ceil(len(S_r_sorted) / 2.0) # TODO fix this bug
         active_arms = S_r_sorted[:number_of_arms_to_keep]
 
     else:
@@ -216,8 +218,9 @@ def prior_guided_successive_halving(
 
 def prior_guided_hyperband(
         benchmark: Benchmark,
-        prior: str,
+        prior_kind: str,
         eta: int,
+        runhistory: Runhistory,
         kernel: Kernel | None,
         use_predicted_y: bool,
         use_early_stopping: bool,
@@ -227,6 +230,7 @@ def prior_guided_hyperband(
         rng: np.random.Generator,
         seed: int,
         result_processor: Any | None,
+        sample_configurations: Callable[..., tuple[list[int], dict[int, float]]],
 ) -> tuple[float, int, int, dict[int, dict[int, float]]]:
     T_max = benchmark.get_max_fidelity()
     number_of_halving_rounds = math.floor(math.log(T_max, eta)) if T_max > 1 else 0
@@ -235,20 +239,22 @@ def prior_guided_hyperband(
     total_budget = 0
     true_final_means: dict[int, dict[int, float]] = {}
     bracket_winner_perfs: list[float] = []
-    ss = np.random.SeedSequence(seed)
-    for hb_bracket in range(number_of_halving_rounds, -1, -1):
-        n_s = max(1, math.ceil((number_of_halving_rounds + 1) * eta ** hb_bracket / (hb_bracket + 1)))
+    seed_sequence = np.random.SeedSequence(seed)
+    for rung, hb_bracket in enumerate(range(number_of_halving_rounds, -1, -1)):
+        num_arms = max(1, math.ceil((number_of_halving_rounds + 1) * eta ** hb_bracket / (hb_bracket + 1)))
 
         logger.debug(
             "Hyperband bracket s=%d/%d: n_s=%d arms, r_s=%.1f, B=%d",
-            hb_bracket, number_of_halving_rounds, n_s, T_max / eta ** hb_bracket, bracketwise_budget,
+            hb_bracket, number_of_halving_rounds, num_arms, T_max / eta ** hb_bracket, bracketwise_budget,
         )
+
+        sample_configurations_initialised = partial(sample_configurations, rung=rung, eta=eta, runhistory=runhistory)
 
         winner_perf, budget_used, _, bracket_true_final_means = prior_guided_successive_halving(
             benchmark=benchmark,
-            num_arms=n_s,
-            prior=prior,
-            sampling_seed=ss.spawn(1)[0].generate_state(1, dtype=np.uint32)[0],
+            num_arms=num_arms,
+            prior_kind=prior_kind,
+            sampling_seed=seed_sequence.spawn(1)[0].generate_state(1, dtype=np.uint32)[0],
             budget_N=bracketwise_budget,
             hb_bracket=hb_bracket,
             kernel=kernel,
@@ -260,6 +266,7 @@ def prior_guided_hyperband(
             rng=rng,
             seed=seed,
             result_processor=result_processor,
+            sample_configurations=sample_configurations_initialised,
         )
         total_budget += budget_used
         true_final_means[hb_bracket] = bracket_true_final_means
@@ -277,8 +284,9 @@ def setup_run(config):
     dataset_id = int(config["dataset_id"])
     kernel_name = config.get("kernel", "satexp_rbf")
     seed = int(config["seed"])
+    use_priorband = bool(config.get("optimizer") == "priorband")
     
-    benchmark = get_benchmark(benchmark_name, num_arms, dataset_id, seed)
+    benchmark = get_benchmark(benchmark_name, num_arms, dataset_id, seed, priorband=use_priorband, n_prior_construction=1000)
     learning_curve_kernel = get_kernel(kernel_name)
 
     return benchmark, learning_curve_kernel
@@ -299,15 +307,16 @@ def run_experiment(config, result_processor, custom_config):
     use_early_stopping = bool(config.get("use_early_stopping", False))
 
     num_arms = int(config["num_arms"])
-    prior = config["prior"]
+    prior_kind = config["prior_kind"]
     optimizer = config["optimizer"]
 
     benchmark, learning_curve_kernel = setup_run(config)
     T_max = benchmark.get_max_fidelity()
 
+    runhistory = Runhistory(eta=2)
     shared_kwargs = dict(
         benchmark=benchmark,
-        prior=prior,
+        prior_kind=prior_kind,
         kernel=learning_curve_kernel,
         use_predicted_y=use_predicted_y,
         use_early_stopping=use_early_stopping,
@@ -316,23 +325,32 @@ def run_experiment(config, result_processor, custom_config):
         sigma0_sq=sigma0_sq,
         rng=rng,
         seed=seed,
+        runhistory=runhistory,
         result_processor=result_processor,
     )
 
-    if optimizer == "hyperband":
-        winner_perf, budget_used, num_arms_left, true_final_means = prior_guided_hyperband(
-            eta=2,
-            **shared_kwargs,
-        )
-    elif optimizer == "successive_halving":
+    if  optimizer == "successive_halving":
         winner_perf, budget_used, num_arms_left, bracket_perfs = prior_guided_successive_halving(
             num_arms=num_arms,
             sampling_seed=seed,
             budget_N=num_arms * np.log2(num_arms),
             hb_bracket=None,
+            sample_configurations=benchmark.sample,
             **shared_kwargs,
         )
         true_final_means = {0: bracket_perfs}
+    elif optimizer == "hyperband":
+        winner_perf, budget_used, num_arms_left, true_final_means = prior_guided_hyperband(
+            eta=2,
+            sample_configurations=benchmark.sample,
+            **shared_kwargs,
+        )
+    elif optimizer == "priorband":
+        winner_perf, budget_used, num_arms_left, true_final_means = prior_guided_hyperband(
+            eta=2,
+            sample_configurations=benchmark.prior_band_sampling,
+            **shared_kwargs,
+        )
     else:
         raise ValueError(f"Unknown optimizer: {optimizer!r}. Choose 'successive_halving' or 'hyperband'.")
 
@@ -360,4 +378,4 @@ if __name__ == "__main__":
     )
     # pyexp.reset_experiments("running", "error")
     pyexp.fill_table_from_config()
-    pyexp.execute(run_experiment, max_experiments=10, random_order=True)
+    pyexp.execute(run_experiment, max_experiments=1, random_order=True)
