@@ -31,7 +31,6 @@ def prior_guided_successive_halving(
         delta: float,
         epsilon: float,
         sigma0_sq: float,
-        tau: float,
         rng: np.random.Generator,
         seed: int,
         result_processor: Any | None,
@@ -178,16 +177,8 @@ def prior_guided_successive_halving(
             N_stop = max(N_stop_candidates) if N_stop_candidates else 0.0
             logger.debug("N_used=%d  N_stop=%.4f", budget_consumed, N_stop)
 
-            max_sigma = max(math.sqrt(round_sigma_sq[arm]) for arm in active_arms)
-            beta_tau = 2 * math.log((math.ceil(T_max / tau) + 1) / delta)
-            gp_uncertainty_bound = math.sqrt(beta_tau) * max_sigma
-            gp_condition_met = gp_uncertainty_bound <= epsilon / 4
             budget_criterion_met = budget_consumed >= N_stop
-            terminated = use_early_stopping and budget_criterion_met and gp_condition_met
-            logger.debug(
-                "gp_uncertainty_bound=%.6f  threshold=%.6f  gp_condition_met=%s",
-                gp_uncertainty_bound, epsilon / 4, gp_condition_met,
-            )
+            terminated = use_early_stopping and budget_criterion_met
 
             if result_processor is not None:
                 result_processor.process_logs({
@@ -203,7 +194,6 @@ def prior_guided_successive_halving(
                         "arm_prediction_variances": arm_prediction_variances,
                         "early_stopping_enabled": 1 if use_early_stopping else 0,
                         "budget_criterion_met": 1 if budget_criterion_met else 0,
-                        "gp_criterion_met": 1 if gp_condition_met else 0,
                         "was_terminated": 1 if terminated else 0,
                     }
                 })
@@ -253,7 +243,6 @@ def prior_guided_hyperband(
         delta: float,
         epsilon: float,
         sigma0_sq: float,
-        tau: float,
         rng: np.random.Generator,
         seed: int,
         result_processor: Any | None,
@@ -291,7 +280,6 @@ def prior_guided_hyperband(
             delta=delta,
             epsilon=epsilon,
             sigma0_sq=sigma0_sq,
-            tau=tau,
             rng=rng,
             seed=seed,
             runhistory=runhistory,
@@ -333,7 +321,6 @@ def run_experiment(config, result_processor, custom_config):
     sigma0_sq = sigma0 ** 2
     epsilon = float(config["epsilon"])
     delta = float(config["delta"])
-    tau = float(config.get("tau", 0.1))
     use_predicted_y = bool(config["use_predicted_y"])
     use_early_stopping = bool(config.get("use_early_stopping", False))
 
@@ -355,7 +342,6 @@ def run_experiment(config, result_processor, custom_config):
         delta=delta,
         epsilon=epsilon,
         sigma0_sq=sigma0_sq,
-        tau=tau,
         rng=rng,
         seed=seed,
         runhistory=runhistory,

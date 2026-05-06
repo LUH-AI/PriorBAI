@@ -3,7 +3,7 @@ PY_EXPERIMENTER:
 
   Database:
     provider: mysql
-    database: priorbai_neurips
+    database: lfehring_priorbai_neurips
 
     table:
       name: new_stopping_synthetic_no_es
@@ -45,7 +45,6 @@ PY_EXPERIMENTER:
           arm_prediction_variances: TEXT
           early_stopping_enabled: INT
           budget_criterion_met: INT
-          gp_criterion_met: INT
           was_terminated: INT
       brackets:
           bracket: INT

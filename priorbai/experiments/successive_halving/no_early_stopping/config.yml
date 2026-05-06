@@ -3,7 +3,7 @@ PY_EXPERIMENTER:
 
   Database:
     provider: mysql
-    database: priorbai_neurips
+    database: lfehring_priorbai_neurips
 
     table:
       name: new_stopping_successive_halving_no_es
@@ -13,7 +13,7 @@ PY_EXPERIMENTER:
         optimizer: { type: VARCHAR(64), values: ["successive_halving"] }
         num_arms: { type: INT, values: [256] }
         benchmark: { type: VARCHAR(255), values: ["lcbench"] }
-        kernel: { type: VARCHAR(255), values: ["linear"] }
+        kernel: { type: VARCHAR(255), values: ["linear", "rbf", "matern32", "matern52", "satexp_rbf"] }
         use_predicted_y: { type: INT, values: [0] }
         use_early_stopping: { type: INT, values: [0] }
         seed: { type: INT, values: { start: 0, stop: 20 } }
@@ -45,7 +45,6 @@ PY_EXPERIMENTER:
           arm_prediction_variances: TEXT
           early_stopping_enabled: INT
           budget_criterion_met: INT
-          gp_criterion_met: INT
           was_terminated: INT
       brackets:
           bracket: INT
