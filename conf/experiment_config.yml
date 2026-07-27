@@ -41,11 +41,15 @@ PY_EXPERIMENTER:
           best_arm_included: INT
           budget_spent_so_far: DOUBLE
           virtual_runtime_so_far: DOUBLE
+          gp_fit_runtime_so_far: DOUBLE
+          overall_runtime_so_far: DOUBLE
           N_stop: DOUBLE
       brackets:
           bracket: INT
           n_arms: INT
           budget_used: DOUBLE
           virtual_runtime_used: DOUBLE
+          gp_fit_runtime_used: DOUBLE
+          overall_runtime_used: DOUBLE
           stopped_early: INT
           stopped_after_round: INT

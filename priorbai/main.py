@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 import warnings
 from functools import partial
 from collections.abc import Callable
@@ -56,6 +57,7 @@ def prior_guided_successive_halving(
     arm_ys: dict[int, list[float]] = {arm: [] for arm in arms}
     N_stop = 0.0
     virtual_runtime_consumed = 0.0
+    gp_fit_runtime_consumed = 0.0
     round_index = -1
     stopped_early = False
     C_log = math.log(2.0 * math.log(number_of_arms, eta) * ((number_of_arms / 2) - 1) / delta)
@@ -105,7 +107,11 @@ def prior_guided_successive_halving(
                     normalize_y=False,
                     random_state=seed,
                 )
+                fit_start = time.perf_counter()
                 gp.fit(X, y)
+                fit_elapsed = time.perf_counter() - fit_start
+                gp_fit_runtime_consumed += fit_elapsed
+
                 X_star = np.array([[1.0]])
                 mu_res, std_res = gp.predict(X_star, return_std=True)
                 mu_j_r = min(1.0, float(mu_res.item()))
@@ -192,6 +198,8 @@ def prior_guided_successive_halving(
                         "best_arm_included": 1 if 0 in active_arms else 0,
                         "budget_spent_so_far": budget_consumed,
                         "virtual_runtime_so_far": virtual_runtime_consumed,
+                        "gp_fit_runtime_so_far": gp_fit_runtime_consumed,
+                        "overall_runtime_so_far": virtual_runtime_consumed + gp_fit_runtime_consumed,
                         "N_stop": N_stop,
                         "std_arm_performances": std_arm_performances,
                         "arm_prediction_variances": arm_prediction_variances,
@@ -229,6 +237,8 @@ def prior_guided_successive_halving(
                 "n_arms": number_of_arms,
                 "budget_used": budget_consumed,
                 "virtual_runtime_used": virtual_runtime_consumed,
+                "gp_fit_runtime_used": gp_fit_runtime_consumed,
+                "overall_runtime_used": virtual_runtime_consumed + gp_fit_runtime_consumed,
                 "stopped_early": 1 if stopped_early else 0,
                 "stopped_after_round": round_index,
             }
