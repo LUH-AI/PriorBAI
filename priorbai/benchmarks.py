@@ -34,8 +34,11 @@ class Benchmark(ABC):
         ...
 
     @abstractmethod
-    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> np.ndarray:
-        """Evaluate the configuration associated with arm at the given fidelities."""
+    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate the configuration associated with arm at the given fidelities.
+
+        Returns (performances, virtual_runtimes), one entry per fidelity level.
+        """
         ...
 
 
@@ -57,10 +60,12 @@ class SyntheticBenchmark(Benchmark):
     def get_config(self, arm: int) -> int:
         return arm
 
-    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> np.ndarray:
+    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         true_mu = self.true_final_means[arm]
         tau = 20.0 + 10.0 * arm
-        return true_mu * (1.0 - np.exp(-fidelity_levels / tau))
+        performances = true_mu * (1.0 - np.exp(-fidelity_levels / tau))
+        virtual_runtimes = np.ones_like(fidelity_levels, dtype=float)
+        return performances, virtual_runtimes
 
 
 class LCBenchBenchmark(Benchmark):
@@ -281,13 +286,16 @@ class LCBenchBenchmark(Benchmark):
     def get_config(self, arm: int) -> dict:
         return self.configs[arm]
 
-    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> np.ndarray:
+    def evaluate(self, arm: int, fidelity_levels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         cfg = dict(self.configs[arm])
         res = []
+        virtual_runtimes = []
         for fidelity in fidelity_levels:
             cfg["epoch"] = min(int(fidelity), self.MAX_FIDELITY)
-            res.append(self.benchmarkset.objective_function(cfg)[0]["val_accuracy"] / 100)
-        return np.array(res)
+            outcome = self.benchmarkset.objective_function(cfg)[0]
+            res.append(outcome["val_accuracy"] / 100)
+            virtual_runtimes.append(outcome["time"])
+        return np.array(res), np.array(virtual_runtimes)
 
 
 def get_benchmark(benchmark_name: str, num_arms: int, dataset_id: int, seed: int, priorband: bool, n_prior_construction: int) -> Benchmark:

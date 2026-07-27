@@ -55,6 +55,7 @@ def prior_guided_successive_halving(
     arm_ts: dict[int, list[int]] = {arm: [] for arm in arms}
     arm_ys: dict[int, list[float]] = {arm: [] for arm in arms}
     N_stop = 0.0
+    virtual_runtime_consumed = 0.0
     round_index = -1
     stopped_early = False
     C_log = math.log(2.0 * math.log(number_of_arms, eta) * ((number_of_arms / 2) - 1) / delta)
@@ -81,11 +82,12 @@ def prior_guided_successive_halving(
         for arm in active_arms:
             new_fidelity_levels = np.arange(previous_round_budget + 1, round_budget + 1, dtype=int)
             if len(new_fidelity_levels) > 0:
-                new_ys = benchmark.evaluate(arm, new_fidelity_levels)
+                new_ys, new_virtual_runtimes = benchmark.evaluate(arm, new_fidelity_levels)
                 if len(new_ys) != len(new_fidelity_levels):
                     raise ValueError("evaluate must return one y per t.")
                 arm_ts[arm].extend(new_fidelity_levels.tolist())
                 arm_ys[arm].extend(new_ys.tolist())
+                virtual_runtime_consumed += float(np.sum(new_virtual_runtimes))
 
             X = np.asarray(arm_ts[arm], dtype=float).reshape(-1, 1) / T_max
             y = np.asarray(arm_ys[arm], dtype=float)
@@ -189,6 +191,7 @@ def prior_guided_successive_halving(
                         "num_arms": len(active_arms),
                         "best_arm_included": 1 if 0 in active_arms else 0,
                         "budget_spent_so_far": budget_consumed,
+                        "virtual_runtime_so_far": virtual_runtime_consumed,
                         "N_stop": N_stop,
                         "std_arm_performances": std_arm_performances,
                         "arm_prediction_variances": arm_prediction_variances,
@@ -225,6 +228,7 @@ def prior_guided_successive_halving(
                 "bracket": hb_bracket if hb_bracket is not None else 0,
                 "n_arms": number_of_arms,
                 "budget_used": budget_consumed,
+                "virtual_runtime_used": virtual_runtime_consumed,
                 "stopped_early": 1 if stopped_early else 0,
                 "stopped_after_round": round_index,
             }
